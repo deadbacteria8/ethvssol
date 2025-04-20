@@ -10,7 +10,7 @@ describe("VotingProgram", function () {
   let owner;
   let addr1;
   let addr2;
-  const votesToBeDone = 5;
+  const votesToBeDone = 150;
   let parties = getData();
   this.beforeAll(async function () {
     [owner, addr1, addr2] = await ethers.getSigners();
