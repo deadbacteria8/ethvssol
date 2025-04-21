@@ -20,10 +20,14 @@ const { unstringifyBigInts } = utils;
 const {SendVote} = ProgramMethods;
 
 describe("voting_program", async () => {
-    const voteCounts = [10, 25, 50, 100, 250];
-    const votingRounds = 10;
+    const voteCounts = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000];
+    const votingRounds = 2;
     const LAMPORTS_PER_SOL = 1_000_000_000;
     let allResults = {};
+
+    console.log(`\n=======================================================================`);
+    console.log(`Starting SOLANA Voting with ${votingRounds} rounds with ${voteCounts} ballots`);
+    console.log(`=======================================================================\n`);
 
     voteCounts.forEach((votesToBeDone) => {
         describe(`VotesToBeDone: ${votesToBeDone}`, () => {
