@@ -41,7 +41,8 @@ describe("VotingProgram", function () {
 
           it("Votes for a candidate", async function () {
             this.timeout(1000000);
-
+            const provider = ethers.provider;
+            const baseNonce = await provider.getTransactionCount(owner.address);
             const completeTransactionPromise = async (voteId) => {
               const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
               let input = { "voterId": voteId };
@@ -56,7 +57,8 @@ describe("VotingProgram", function () {
               const [a, b, c, inputArray] = argv;
 
               const tx = await voting.vote(voteAccount, a, b, c, inputArray, {
-                gasLimit: 30000000
+                gasLimit: 30000000,
+                nonce: baseNonce + voteId - 1,
               });
               const receipt = await tx.wait();
               const txFee = receipt.gasUsed * tx.gasPrice;
@@ -85,6 +87,7 @@ describe("VotingProgram", function () {
           });
 
           after("Print results", async function () {
+            this.timeout(1000000);
             console.log("Total time " + timeElapsed);
             
             let totalRecordedVotes = 0;
@@ -118,6 +121,7 @@ describe("VotingProgram", function () {
       });
 
       after(function () {
+        this.timeout(1000000);
         const table = [];
         for (const round in votingRoundsResult) {
           const result = votingRoundsResult[round];
@@ -136,6 +140,7 @@ describe("VotingProgram", function () {
   });
 
   after(function () {
+    this.timeout(1000000);
     const fullTable = [];
 
     for (const voteCount in allResults) {
