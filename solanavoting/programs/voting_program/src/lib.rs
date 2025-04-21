@@ -5,7 +5,7 @@ use groth16_solana::groth16::{Groth16Verifyingkey, Groth16Verifier};
 mod verifying_key;
 use verifying_key::VERIFYINGKEY;
 
-type G1 = ark_bn254::g1::G1Affine;
+
 declare_id!("4FVgw6wQGrGw5kyGGr6Cc3owzzJpBq4M2KmwV5eYKzbq");
 #[program]
 pub mod voting_program {

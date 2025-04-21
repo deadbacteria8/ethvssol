@@ -21,7 +21,7 @@ const {SendVote} = ProgramMethods;
 describe("voting_program", () => {
     let parties;
     let timeElapsed;
-    const votesToBeDone = 10;
+    const votesToBeDone = 3;
     before(async () => {
         await loadWasm();
         //This initializes vote accounts on the blockchain
@@ -30,12 +30,12 @@ describe("voting_program", () => {
     it("Votes for a candidate", async function () {
         //This sets the max amount of time the test case can run
         this.timeout(1000000);
+        let curve = await buildBn128();
         const completeTransactionPromise = async (voteId) => {
             //This randomizes which voteAccount to vote for
             const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
             let input = { "voterId":voteId };
             let { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasmPath, zkeyPath);
-            let curve = await buildBn128();
             let proofProc = unstringifyBigInts(proof);
             publicSignals = unstringifyBigInts(publicSignals);
             const pi_a = g1Uncompressed(curve, proofProc.pi_a);
@@ -44,9 +44,12 @@ describe("voting_program", () => {
             const pi_c = g1Uncompressed(curve, proofProc.pi_c);
             const publicSignalsBuffer = to32ByteBuffer(BigInt(publicSignals[0]));
             let transaction = new Transaction();
+            const startTime = Date.now();
             const instruction = await SendVote(program.methods, proof_a, pi_b, pi_c, publicSignalsBuffer, voteAccount);
             transaction.add(instruction);
             await provider.sendAndConfirm(transaction);
+            const endTime = Date.now();
+            console.log(`Transaction took ${endTime - startTime} ms`);
         }
         let promiseArray = [];
         let startTime = performance.now();
@@ -64,6 +67,7 @@ describe("voting_program", () => {
         for(var i in parties) {
             const voterState = await program.account.voteAccount.fetch(parties[i].Key.publicKey);
             console.log(voterState);
+            console.log(voterState.voteCount.toNumber())
             totalRecordedVotes = totalRecordedVotes + voterState.voteCount.toNumber();
         }
         //The value of votesAreMissing is dependent on if the total amount of recorded votes on the blockchain-

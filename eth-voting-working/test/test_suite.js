@@ -10,7 +10,7 @@ describe("VotingProgram", function () {
   let owner;
   let addr1;
   let addr2;
-  const votesToBeDone = 5;
+  const votesToBeDone = 10;
   let parties = getData();
   this.beforeAll(async function () {
     [owner, addr1, addr2] = await ethers.getSigners();
@@ -22,8 +22,10 @@ describe("VotingProgram", function () {
 
   it("vote", async function ()  {
     this.timeout(1000000);
-
-    async function bla (voteId){
+    const provider = ethers.provider;
+    const baseNonce = await provider.getTransactionCount(owner.address);
+    console.log(baseNonce)
+    async function createVote (voteId){
       let input = { "voterId": voteId };
       let { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasmPath, zkeyPath);
       const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
@@ -31,14 +33,15 @@ describe("VotingProgram", function () {
       const argv = JSON.parse("[" + callData + "]");
       const [a, b, c, inputArray] = argv;
       const tx = await voting.vote(voteAccount, a, b, c, inputArray, {
-        gasLimit: 30000000
+        gasLimit: 30000000,
+        nonce: baseNonce + voteId - 1,
       });
       await tx.wait();
     }
 
     let promiseArray = [];
-    for(var i = 1; i <= votesToBeDone; i++) {
-      promiseArray.push(bla(i));
+    for(var i = 1; i <= 100; i++) {
+      promiseArray.push(createVote(i));
     }
     await Promise.all(promiseArray);
   })

@@ -15,7 +15,9 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "npx hardhat test test/test_suite.js"
+    "test": "npx hardhat test test/test_suite.js",
+    "test-bl": "npx hardhat test --network anvil",
+    "blockchain": "anvil --block-time 12"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "3.0.8",
