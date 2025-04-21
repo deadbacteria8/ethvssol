@@ -8,8 +8,8 @@ const { getData } = require('./test_accounts');
 const fs = require("fs");
 
 describe("VotingProgram", function () {
-  const voteCounts = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000];
-  const votingRounds = 2;
+  const voteCounts = [1, 10, 25, 50, 100, 1000, 1500, 2000, 2500, 3000];
+  const votingRounds = 10;
   let allResults = {};
 
   console.log(`\n=======================================================================`);
@@ -44,7 +44,7 @@ describe("VotingProgram", function () {
 
             const completeTransactionPromise = async (voteId) => {
               const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
-              let input = { "voterId": voteId };
+              let input = { "voterId": 1 };
 
               const startProof = performance.now();
               let { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasmPath, zkeyPath);
