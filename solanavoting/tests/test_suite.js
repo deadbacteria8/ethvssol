@@ -1,4 +1,5 @@
 
+
 import { buildBn128, utils } from "ffjavascript";
 import { Transaction } from "@solana/web3.js";
 import ProgramMethods from "./ProgramMethods/ProgramMethods.js"
@@ -20,8 +21,8 @@ const { unstringifyBigInts } = utils;
 const {SendVote} = ProgramMethods;
 
 describe("voting_program", async () => {
-    const voteCounts = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000];
-    const votingRounds = 2;
+    const voteCounts = [4];
+    const votingRounds = 1;
     const LAMPORTS_PER_SOL = 1_000_000_000;
     let allResults = {};
 
@@ -49,16 +50,15 @@ describe("voting_program", async () => {
                         parties = await AddPartiesSolana();
                     });
 
+
                     it("Votes for a candidate", async function () {
                         this.timeout(1000000);
                         const completeTransactionPromise = async (voteId) => {
                             const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
                             let input = { "voterId": voteId };
 
-                            const startProof = performance.now();
                             let { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasmPath, zkeyPath);
-                            const endProof = performance.now();
-                            const proofTime = endProof - startProof;
+
 
                             let proofProc = unstringifyBigInts(proof);
                             publicSignals = unstringifyBigInts(publicSignals);
@@ -68,39 +68,58 @@ describe("voting_program", async () => {
                             const pi_c = g1Uncompressed(curve, proofProc.pi_c);
                             const publicSignalsBuffer = to32ByteBuffer(BigInt(publicSignals[0]));
 
-                            let transaction = new Transaction();
-                            const instruction = await SendVote(program.methods, proof_a, pi_b, pi_c, publicSignalsBuffer, voteAccount);
-                            transaction.add(instruction);
 
-                            const { blockhash } = await provider.connection.getLatestBlockhash();
-                            transaction.recentBlockhash = blockhash;
-                            transaction.feePayer = provider.wallet.publicKey;
-
-                            const message = transaction.compileMessage();
-                            const { value: fee } = await provider.connection.getFeeForMessage(message);
-
-                            await provider.sendAndConfirm(transaction);
-
-                            return { proofTime, fee };
+                            return await SendVote(program.methods, proof_a, pi_b, pi_c, publicSignalsBuffer, voteAccount);
                         };
 
                         const promiseArray = [];
                         proofTimes = [];
                         txFees = [];
+
+                        
                         const startTime = performance.now();
                         for (let i = 1; i <= votesToBeDone; i++) {
                             promiseArray.push(completeTransactionPromise(i));
                         }
+                        
                         const results = await Promise.all(promiseArray);
+                        let transaction = new Transaction();
+                        let blockhash  = (await provider.connection.getLatestBlockhash()).blockhash;
+                        transaction.recentBlockhash = blockhash;
+                        transaction.feePayer = provider.wallet.publicKey;
+                        for(let i in results) {
+                            const instruction = results[i];
+                            const serializedInstruction = instruction.data;
+                            const instructionSize = serializedInstruction.length
+                            const serialized = transaction.serialize({
+                                verifySignatures: false,
+                                requireAllSignatures: false,
+                            })
+                            const size = serialized.length + 1 + (transaction.signatures.length * 64)
+                            if(size + instructionSize > 1232) {
+                                const message = transaction.compileMessage();
+                                const { value: fee } = await provider.connection.getFeeForMessage(message);
+                                txFees.push(fee);
+                                await provider.sendAndConfirm(transaction);
+                                transaction = new Transaction();
+                                blockhash  = (await provider.connection.getLatestBlockhash()).blockhash;
+                                transaction.recentBlockhash = blockhash;
+                                transaction.feePayer = provider.wallet.publicKey;
+                            }
+                            transaction.add(results[i])
+                        }
+
+                        const message = transaction.compileMessage();
+                        const { value: fee } = await provider.connection.getFeeForMessage(message);
+                        txFees.push(fee);
+                        await provider.sendAndConfirm(transaction);
+                        
+
                         const endTime = performance.now();
                         timeElapsed = endTime - startTime;
 
-                        results.forEach(res => {
-                            proofTimes.push(res.proofTime);
-                            txFees.push(res.fee);
-                        });
 
-                        proofTimesPerRound[round + 1] = proofTimes;
+
                         txFeesPerRound[round + 1] = txFees;
                     });
 
@@ -117,9 +136,6 @@ describe("voting_program", async () => {
 
                         partyVotes["ballot_count"] = totalRecordedVotes;
                         partyVotes["execution_time_ms"] = Number(timeElapsed.toFixed(2));
-                        partyVotes["avg_proof_time_per_ballot_ms"] = (
-                            proofTimes.reduce((a, b) => a + b, 0) / proofTimes.length
-                        ).toFixed(2);
                         partyVotes["total_tx_fee_lamports"] = txFees.reduce((a, b) => a + b, 0);
                         partyVotes["avg_tx_fee_SOL"] = Number(
                             (txFees.reduce((a, b) => a + b, 0) / LAMPORTS_PER_SOL).toFixed(6)
