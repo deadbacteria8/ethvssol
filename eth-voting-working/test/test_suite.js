@@ -8,8 +8,8 @@ const { getData } = require('./test_accounts');
 const fs = require("fs");
 
 describe("VotingProgram", function () {
-  const voteCounts = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000];
-  const votingRounds = 2;
+  const voteCounts = [50];
+  const votingRounds = 1;
   let allResults = {};
 
   console.log(`\n=======================================================================`);
@@ -28,8 +28,8 @@ describe("VotingProgram", function () {
           let owner, addr1, addr2;
           let timeElapsed;
           let txFees;
-          const BLOCK_GAS_LIMIT = 10000000;
-          const blockTimeMs = 12000;
+          const BLOCK_GAS_LIMIT = 1000000;
+          const blockTimeMs = 1;
           let currentBlockGas = 0;
 
           before(async function () {
@@ -37,22 +37,19 @@ describe("VotingProgram", function () {
             [owner, addr1, addr2] = await ethers.getSigners();
             const Voting = await ethers.getContractFactory("Voting_program");
             voting = await Voting.deploy(parties);
+            await ethers.provider.send("evm_mine", []);
             await voting.waitForDeployment();
           });
 
           it("Votes for a candidate", async function () {
             this.timeout(1000000);
             const provider = ethers.provider;
-            const baseNonce = await provider.getTransactionCount(owner.address);
             let lastMine = performance.now();
             const completeTransactionPromise = async (voteId) => {
               const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
               let input = { "voterId": voteId };
 
-              const startProof = performance.now();
               let { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasmPath, zkeyPath);
-              const endProof = performance.now();
-              const proofTime = endProof - startProof;
 
               const callData = await snarkjs.groth16.exportSolidityCallData(proof, [publicSignals]);
               const argv = JSON.parse("[" + callData + "]");
@@ -60,49 +57,14 @@ describe("VotingProgram", function () {
               const estimatedGas = await voting.vote.estimateGas(voteAccount, a, b, c, inputArray, {
                 from: owner.address,
               });
-              const tx = await voting.vote(voteAccount, a, b, c, inputArray, {
-                gasLimit: estimatedGas, 
-                nonce: baseNonce + voteId - 1,
-              });
-
-
-              return { "tx": tx, "estimatedGas": estimatedGas};
+              const txFunc = async (nonce) => {
+                await voting.vote(voteAccount, a, b, c, inputArray, {
+                  gasLimit: estimatedGas, 
+                  nonce: nonce,
+                });
+              }
+              return { "txFunc": txFunc, "estimatedGas": estimatedGas};
             };
-
-            const makeTransactions = async (res) => {
-              let iterationHasMined;
-              for(i in res) {
-                iterationHasMined = false;
-                const tx = res[i].tx;
-                const estimatedGas = res[i].estimatedGas;
-                const estimatedGasInt = parseInt(estimatedGas.toString());
-                const currentTime = performance.now();
-
-                
-                const elapsedTimeInSec = currentTime - lastMine;
-                const timeLeft = blockTimeMs - elapsedTimeInSec;
-                if (currentBlockGas + estimatedGasInt > BLOCK_GAS_LIMIT) {
-                  const remainingTime = Math.max(0, timeLeft);
-                  await new Promise(resolve => setTimeout(resolve, remainingTime));
-                  await ethers.provider.send("evm_mine", []);
-                  currentBlockGas = 0;
-                  lastMine = performance.now();
-                  iterationHasMined = true;
-                }
-                currentBlockGas += estimatedGasInt;
-                txFees.push(estimatedGas * tx.gasPrice);
-              }
-
-              if(!iterationHasMined) {
-                const currentTime = performance.now();
-                const elapsedTimeInSec = currentTime - lastMine;
-                const timeLeft = blockTimeMs - elapsedTimeInSec;
-                
-                const remainingTime = Math.max(0, timeLeft);
-                await new Promise(resolve => setTimeout(resolve, remainingTime));
-                await ethers.provider.send("evm_mine", []);
-              }
-            }
 
             const promiseArray = [];
             proofTimes = [];
@@ -111,22 +73,48 @@ describe("VotingProgram", function () {
             for (let i = 1; i <= votesToBeDone; i++) {
               promiseArray.push(completeTransactionPromise(i));
             }
+
             const results = await Promise.all(promiseArray);
-            await makeTransactions(results)
+            let currentGas = 0;
+            let txFuncs = [];
+            for(let i in results) {
+              const {txFunc, estimatedGas} = results[i];
+              if(currentGas + parseInt(estimatedGas.toString()) > BLOCK_GAS_LIMIT) {
+                let baseNonce = await provider.getTransactionCount(owner.address);
+                await Promise.all(txFuncs.map((fn, index) => fn(baseNonce + index)));
+                const currentTime = performance.now();
+                const elapsedTimeInSec = currentTime - lastMine;
+                const timeLeft = blockTimeMs - elapsedTimeInSec;
+                const remainingTime = Math.max(0, timeLeft);
+                await new Promise(resolve => setTimeout(resolve, remainingTime));
+                await ethers.provider.send("evm_mine", []);
+                lastMine = performance.now();
+                txFuncs = [];
+                currentGas = 0;
+              }
+              txFuncs.push(txFunc);
+              currentGas+= parseInt(estimatedGas.toString());
+            }
+
+            if(txFuncs.length > 0) {
+              let baseNonce = await provider.getTransactionCount(owner.address);
+              await Promise.all(txFuncs.map((fn, index) => fn(baseNonce + index)));
+              const currentTime = performance.now();
+              const elapsedTimeInSec = currentTime - lastMine;
+              const timeLeft = blockTimeMs - elapsedTimeInSec;
+              const remainingTime = Math.max(0, timeLeft);
+              await new Promise(resolve => setTimeout(resolve, remainingTime));
+              await ethers.provider.send("evm_mine", []);
+            }
             const endTime = performance.now();
             timeElapsed = endTime - startTime;
-
-
             txFeesPerRound[round + 1] = txFees;
           });
-
           after("Print results", async function () {
             this.timeout(1000000);
-            
             let totalRecordedVotes = 0;
             let partyVotes = {};
             const allCandidates = await voting.getCandidates();
-            await ethers.provider.send("evm_mine", []);
             let partyIndex = 0;
             allCandidates.forEach(candidate => {
               totalRecordedVotes += Number(candidate.voteCount);
