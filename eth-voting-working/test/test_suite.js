@@ -8,8 +8,8 @@ const { getData } = require('./test_accounts');
 const fs = require("fs");
 
 describe("VotingProgram", function () {
-  const voteCounts = [100];
-  const votingRounds = 1;
+  const voteCounts = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000];
+  const votingRounds = 2;
   let allResults = {};
 
   console.log(`\n=======================================================================`);
