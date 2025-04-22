@@ -8,8 +8,8 @@ const { getData } = require('./test_accounts');
 const fs = require("fs");
 
 describe("VotingProgram", function () {
-  const voteCounts = [50];
-  const votingRounds = 1;
+  const voteCounts = [10, 25, 50, 100, 250, 500, 1000];
+  const votingRounds = 5;
   let allResults = {};
 
   console.log(`\n=======================================================================`);
@@ -28,9 +28,8 @@ describe("VotingProgram", function () {
           let owner, addr1, addr2;
           let timeElapsed;
           let txFees;
-          const BLOCK_GAS_LIMIT = 1000000;
-          const blockTimeMs = 1;
-          let currentBlockGas = 0;
+          const BLOCK_GAS_LIMIT = 36000000;
+          const blockTimeMs = 12000;
 
           before(async function () {
             parties = getData();
@@ -48,9 +47,10 @@ describe("VotingProgram", function () {
             const completeTransactionPromise = async (voteId) => {
               const voteAccount = (parties[Math.floor(Math.random() * parties.length)]).Key;
               let input = { "voterId": voteId };
-
+              const startTime = performance.now();
               let { proof, publicSignals } = await snarkjs.groth16.fullProve(input, wasmPath, zkeyPath);
-
+              const endTime = performance.now();
+              const proofTime = endTime - startTime;
               const callData = await snarkjs.groth16.exportSolidityCallData(proof, [publicSignals]);
               const argv = JSON.parse("[" + callData + "]");
               const [a, b, c, inputArray] = argv;
@@ -58,12 +58,13 @@ describe("VotingProgram", function () {
                 from: owner.address,
               });
               const txFunc = async (nonce) => {
-                await voting.vote(voteAccount, a, b, c, inputArray, {
+                const tx = await voting.vote(voteAccount, a, b, c, inputArray, {
                   gasLimit: estimatedGas, 
                   nonce: nonce,
                 });
+                return tx;
               }
-              return { "txFunc": txFunc, "estimatedGas": estimatedGas};
+              return { "txFunc": txFunc, "estimatedGas": estimatedGas, "proofTime": proofTime};
             };
 
             const promiseArray = [];
@@ -81,7 +82,13 @@ describe("VotingProgram", function () {
               const {txFunc, estimatedGas} = results[i];
               if(currentGas + parseInt(estimatedGas.toString()) > BLOCK_GAS_LIMIT) {
                 let baseNonce = await provider.getTransactionCount(owner.address);
-                await Promise.all(txFuncs.map((fn, index) => fn(baseNonce + index)));
+                const receipts = await Promise.all(
+                  txFuncs.map((fn, i) => fn(baseNonce + i).then(tx => tx.wait()))
+                );
+                
+                txFees.push(
+                  ...receipts.map(r => Number(r.gasUsed) * Number(r.gasPrice))
+                );
                 const currentTime = performance.now();
                 const elapsedTimeInSec = currentTime - lastMine;
                 const timeLeft = blockTimeMs - elapsedTimeInSec;
@@ -92,13 +99,20 @@ describe("VotingProgram", function () {
                 txFuncs = [];
                 currentGas = 0;
               }
+              proofTimes.push(results[i].proofTime);
               txFuncs.push(txFunc);
               currentGas+= parseInt(estimatedGas.toString());
             }
 
             if(txFuncs.length > 0) {
               let baseNonce = await provider.getTransactionCount(owner.address);
-              await Promise.all(txFuncs.map((fn, index) => fn(baseNonce + index)));
+              const receipts = await Promise.all(
+                txFuncs.map((fn, i) => fn(baseNonce + i).then(tx => tx.wait()))
+              );
+              
+              txFees.push(
+                ...receipts.map(r => Number(r.gasUsed) * Number(r.gasPrice))
+              );
               const currentTime = performance.now();
               const elapsedTimeInSec = currentTime - lastMine;
               const timeLeft = blockTimeMs - elapsedTimeInSec;
@@ -124,6 +138,9 @@ describe("VotingProgram", function () {
 
             partyVotes["ballot_count"] = totalRecordedVotes;
             partyVotes["execution_time_ms"] = Number(timeElapsed.toFixed(2));
+            partyVotes["avg_proof_time_per_ballot_ms"] = (
+              proofTimes.reduce((a, b) => a + b, 0) / proofTimes.length
+            ).toFixed(2);
             partyVotes["total_tx_fee_wei"] = txFees.reduce((a, b) => a + Number(b), 0);
             partyVotes["avg_tx_fee_ETH"] = Number(
               (txFees.reduce((a, b) => a + Number(b), 0) / 1e18).toFixed(6)
